@@ -1,0 +1,14 @@
+{
+  "name": "dao-treasury-project",
+  "version": "1.0.0",
+  "description": "Simple DAO with Treasury for local Hardhat demo",
+  "scripts": {
+    "test": "npx hardhat test",
+    "node": "npx hardhat node",
+    "deploy:localhost": "npx hardhat run scripts/deploy.js --network localhost"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.0"
+  }
+}

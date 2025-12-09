@@ -1,0 +1,195 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Simple DAO + Treasury Demo</title>
+</head>
+<body>
+  <h1>Simple DAO Demo</h1>
+
+  <section>
+    <h2>Connection</h2>
+    <button id="btnConnect">Connect Wallet</button>
+    <p>Account: <span id="account"></span></p>
+  </section>
+
+  <section>
+    <h2>Treasury</h2>
+    <p>DAO Address: <span id="daoAddr"></span></p>
+    <p>Treasury Address: <span id="treasuryAddr"></span></p>
+    <input id="depositAmount" placeholder="Amount in ETH">
+    <button id="btnDeposit">Deposit</button>
+    <p>Treasury Balance: <span id="treasuryBalance"></span> ETH</p>
+  </section>
+
+  <section>
+    <h2>Create Proposal</h2>
+    <input id="proposalDesc" placeholder="Description"><br>
+    <input id="proposalRecipient" placeholder="Recipient address"><br>
+    <input id="proposalAmount" placeholder="Amount in ETH"><br>
+    <button id="btnCreateProposal">Create Proposal</button>
+    <p>Last Proposal ID: <span id="lastProposalId"></span></p>
+  </section>
+
+  <section>
+    <h2>Vote</h2>
+    <input id="voteProposalId" placeholder="Proposal ID">
+    <button id="btnVoteYes">Vote YES</button>
+    <button id="btnVoteNo">Vote NO</button>
+  </section>
+
+  <section>
+    <h2>View Proposal</h2>
+    <input id="viewProposalId" placeholder="Proposal ID">
+    <button id="btnViewProposal">Load Proposal</button>
+    <pre id="proposalDetails"></pre>
+  </section>
+
+  <section>
+    <h2>Execute Proposal</h2>
+    <input id="executeProposalId" placeholder="Proposal ID">
+    <button id="btnExecuteProposal">Execute</button>
+  </section>
+
+  <!-- Ethers v6 UMD build -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.12.0/dist/ethers.umd.min.js"></script>
+  <script>
+    // IMPORTANT: replace these after deployment with real addresses
+    const DAO_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+    const TREASURY_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
+
+    document.getElementById("daoAddr").textContent = DAO_ADDRESS;
+    document.getElementById("treasuryAddr").textContent = TREASURY_ADDRESS;
+
+    const daoAbi = [
+      "function createProposal(string description,address recipient,uint256 amount) returns (uint256)",
+      "function vote(uint256 proposalId,bool support)",
+      "function getProposal(uint256 proposalId) view returns (uint256,string,address,uint256,uint256,uint256,uint256,bool)",
+      "function executeProposal(uint256 proposalId)",
+      "function nextProposalId() view returns (uint256)"
+    ];
+
+    const treasuryAbi = [
+      "function deposit() payable",
+      "function getBalance() view returns (uint256)"
+    ];
+
+    let provider, signer, dao, treasury;
+
+    async function connect() {
+      if (!window.ethereum) {
+        alert("No injected wallet found (MetaMask not installed / wrong browser)");
+        return;
+      }
+      try {
+        provider = new ethers.BrowserProvider(window.ethereum);
+        const accounts = await provider.send("eth_requestAccounts", []);
+        signer = await provider.getSigner();
+        document.getElementById("account").textContent = accounts[0];
+
+        console.log("Using DAO:", DAO_ADDRESS);
+        console.log("Using Treasury:", TREASURY_ADDRESS);
+
+        dao = new ethers.Contract(DAO_ADDRESS, daoAbi, signer);
+        treasury = new ethers.Contract(TREASURY_ADDRESS, treasuryAbi, signer);
+
+        console.log("Contracts initialized");
+        await refreshTreasuryBalance();
+      } catch (e) {
+        console.error("Error in connect():", e);
+        alert("Failed to connect or init contracts. Check console.");
+      }
+    }
+
+    async function refreshTreasuryBalance() {
+      if (!treasury) {
+        console.warn("Treasury not initialized yet");
+        return;
+      }
+      const bal = await treasury.getBalance();
+      document.getElementById("treasuryBalance").textContent =
+        ethers.formatEther(bal);
+    }
+
+    async function deposit() {
+      if (!treasury) {
+        alert("Connect wallet first.");
+        return;
+      }
+      const amount = document.getElementById("depositAmount").value || "0";
+      const tx = await treasury.deposit({ value: ethers.parseEther(amount) });
+      await tx.wait();
+      await refreshTreasuryBalance();
+    }
+
+    async function createProposal() {
+      if (!dao) {
+        alert("Connect wallet first.");
+        return;
+      }
+      const desc = document.getElementById("proposalDesc").value;
+      const recipient = document.getElementById("proposalRecipient").value;
+      const amount = document.getElementById("proposalAmount").value || "0";
+
+      const tx = await dao.createProposal(
+        desc,
+        recipient,
+        ethers.parseEther(amount)
+      );
+      await tx.wait();
+      const lastIdBig = (await dao.nextProposalId()) - 1n;
+      document.getElementById("lastProposalId").textContent =
+        lastIdBig.toString();
+    }
+
+    async function voteYesNo(support) {
+      if (!dao) {
+        alert("Connect wallet first.");
+        return;
+      }
+      const id = document.getElementById("voteProposalId").value;
+      const tx = await dao.vote(id, support);
+      await tx.wait();
+    }
+
+    async function viewProposal() {
+      if (!dao) {
+        alert("Connect wallet first.");
+        return;
+      }
+      const id = document.getElementById("viewProposalId").value;
+      const p = await dao.getProposal(id);
+      const obj = {
+        id: p[0].toString(),
+        description: p[1],
+        recipient: p[2],
+        amountEth: ethers.formatEther(p[3]),
+        yesVotes: p[4].toString(),
+        noVotes: p[5].toString(),
+        deadline: p[6].toString(),
+        executed: p[7]
+      };
+      document.getElementById("proposalDetails").textContent =
+        JSON.stringify(obj, null, 2);
+    }
+
+    async function executeProposal() {
+      if (!dao) {
+        alert("Connect wallet first.");
+        return;
+      }
+      const id = document.getElementById("executeProposalId").value;
+      const tx = await dao.executeProposal(id);
+      await tx.wait();
+    }
+
+    document.getElementById("btnConnect").onclick = connect;
+    document.getElementById("btnDeposit").onclick = deposit;
+    document.getElementById("btnCreateProposal").onclick = createProposal;
+    document.getElementById("btnVoteYes").onclick = () => voteYesNo(true);
+    document.getElementById("btnVoteNo").onclick  = () => voteYesNo(false);
+    document.getElementById("btnViewProposal").onclick = viewProposal;
+    document.getElementById("btnExecuteProposal").onclick = executeProposal;
+  </script>
+</body>
+</html>
